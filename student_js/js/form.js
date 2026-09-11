@@ -7,6 +7,7 @@ let editingStudentId = null;
 const studentForm = document.getElementById("studentForm");
 const studentTableBody = document.getElementById("studentTableBody");
 const submitButton = studentForm.querySelector('button[type="submit"]');
+const cancelButton = studentForm.querySelector('.cancel-btn');
 
 //에러메시지와 로딩메시지 
 const loadingMessage = document.getElementById('loadingMessage');
@@ -87,8 +88,13 @@ studentForm.addEventListener("submit", function (e) {
     }
     console.log("유효한 데이터:", studentData);
 
-    // 서버로 데이터 전송
-    createStudent(studentData);
+    // 수정 
+    if (editingStudentId) {
+        updateStudent(editingStudentId, studentData);
+    } else {
+    // 등록
+        createStudent(studentData);
+    }    
 
 });
 
@@ -117,6 +123,31 @@ async function editStudent(studentId) {
         studentForm.scrollIntoView({ behavior: 'smooth' });
     } catch (error) {
         console.error('Error:', error.message);
+        showError(error.message);
+    }
+};
+
+async function updateStudent(studentId, studentData) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/students/${studentId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(studentData),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            const defaultMsg = response.status === 409 ? "학생정보가 중복됩니다." : "학생정보 수정에 실패했습니다.";
+            throw new Error(data.message || defaultMsg);
+        }
+
+        resetForm();
+        showSuccess('학생 정보가 성공적으로 수정되었습니다.');
+        loadStudents();
+        return data;
+    } catch (error) {
+        console.error('Error:', error);
         showError(error.message);
     }
 }
