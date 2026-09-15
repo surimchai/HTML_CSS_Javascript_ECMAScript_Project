@@ -1,183 +1,165 @@
 import './style.css'
 import {
-    fetchStudents as fetchStuAll,
-    fetchStudent as apiFetchStudent,
-    createStudent as apiCreateStudent,
-    updateStudent as apiUpdateStudent,
-    deleteStudent as apiDeleteStudent,
+    fetchStudents,
+    fetchStudent,
+    createStudent,
+    updateStudent,
+    deleteStudent,
 } from './api/studentApi';
 
-import { studentForm, collectStudentData } from "./ui/studentForm.js";
+import {
+    studentForm, collectStudentData, cancelButton,
+    fillForm, setEditMode, resetForm, scrollToForm,
+} from "./ui/studentForm.js";
+
 import { validateStudent } from "./lib/validation.js";
+import { showError, showSuccess, clearMessages, setLoading } from "./ui/message.js";
+import { renderStudentTable, renderTableError, studentTableBody, } from "./ui/studentTable.js";
+import { APP_MODE } from "./config.js";
 
 // 현재 수정 중인 학생 ID
 let editingStudentId = null;
 
-// DOM 요소 참조
-const studentTableBody = document.getElementById("studentTableBody");
-const submitButton = studentForm.querySelector('button[type="submit"]');
-const cancelButton = studentForm.querySelector('.cancel-btn');
-
-//에러메시지와 로딩메시지 
-const loadingMessage = document.getElementById('loadingMessage');
-const formError = document.getElementById('formError');
-
-// 성공 메시지가 저절로 사라지기까지의 시간(ms)
-const MESSAGE_TIMEOUT = 3000;
-// 자동 초기화 예약. 새 메시지가 오면 이전 예약을 취소한다.
-let messageTimer = null;
-
-
-// 에러 메시지 표시
-function showError(message) {
-    clearTimeout(messageTimer);          // 앞선 자동 초기화 예약을 취소한다
-    formError.textContent = message;
-    formError.style.display = 'block';
-    formError.style.color = '#dc3545';
-    messageTimer = setTimeout(clearMessages, MESSAGE_TIMEOUT);
+/* ── 모드 표시 ──────────────────────────────────────────── */
+ 
+// 제목 옆에 TEST 또는 PROD 를 적는다.
+// 값은 .env 파일에서 오고, Vite 가 빌드할 때 넣어 준다.
+const appModeBadge = document.getElementById("appMode");
+appModeBadge.textContent = APP_MODE;
+ 
+// 모드에 따라 색을 다르게 한다. classList.add 로 클래스를 하나 더 붙인다.
+if (APP_MODE === "PROD") {
+    appModeBadge.classList.add("prod");
+} else {
+    appModeBadge.classList.add("test");
 }
 
-// 성공 메시지 표시 - MESSAGE_TIMEOUT 뒤에 저절로 사라진다
-function showSuccess(message) {
-    clearTimeout(messageTimer);
-    formError.textContent = message;
-    formError.style.display = 'block';
-    formError.style.color = '#28a745';
-    messageTimer = setTimeout(clearMessages, MESSAGE_TIMEOUT);
-}
-
-// 메시지 초기화
-function clearMessages() {
-    clearTimeout(messageTimer);          // 예약이 남아 있으면 함께 취소한다
-    messageTimer = null;
-    formError.textContent = '';
-    formError.style.display = 'none';
-}
-// Form 초기화
-function resetForm() {
-    studentForm.reset();
-    editingStudentId = null;
-    submitButton.textContent = '학생 등록';
-    clearMessages();
-}
-
-
-// 초기화
-document.addEventListener("DOMContentLoaded", function () {
-    loadStudents();
-});
 
 // 폼 제출 이벤트 핸들러
-studentForm.addEventListener("submit", function (e) {
-    e.preventDefault();
-
-    //FormData에 저장된 값을 추출하여 서버로 전송할 중첩된 객체를 다시 생성하기
-    const studentData = collectStudentData;
-
-    // 유효성 검사
-    // 바꾼 뒤 — 돌아온 메시지를 화면에 보여 준다
+// 핸들러 안에서 await 을 쓰려면 함수에 async 를 붙여야 한다.
+studentForm.addEventListener("submit", async (event) => {
+    event.preventDefault();          // 폼 제출로 페이지가 새로고침되는 것을 막는다
+    clearMessages();
+ 
+    const studentData = collectStudentData();
+ 
+    // validateStudent 는 문제가 있으면 메시지를, 없으면 null 을 돌려준다.
+    // 문제가 있으면 여기서 끝낸다(early return).
     const errorMessage = validateStudent(studentData);
     if (errorMessage) {
         showError(errorMessage);
         return;
     }
-
-    // 수정 
-    if (editingStudentId) {
-        updateStudent(editingStudentId, studentData);
-    } else {
-        // 등록
-        createStudent(studentData);
+ 
+    try {
+        // editingStudentId 에 값이 있으면 수정, 없으면 등록이다.
+        if (editingStudentId) {
+            await updateStudent(editingStudentId, studentData);
+            showSuccess("학생 정보가 성공적으로 수정되었습니다.");
+        } else {
+            await createStudent(studentData);
+            showSuccess("학생이 성공적으로 등록되었습니다.");
+        }
+ 
+        editingStudentId = null;
+        resetForm();
+        await loadStudents();         // 목록 새로고침
+    } catch (error) {
+        console.error("Error:", error);
+        showError(error.message);     // 서버가 보낸 실제 메시지
     }
-
 });
 
-cancelButton.addEventListener('click', function () {
-    studentForm.reset();
+
+cancelButton.addEventListener("click", () => {
+    editingStudentId = null;
+    resetForm();
+    clearMessages();
 });
+
 
 async function loadStudents() {
-    loadingMessage.style.display = "block";
+    setLoading(true);
 
     // try 안에서 오류가 나면 곧바로 catch 로 넘어간다.
     // finally 는 성공하든 실패하든 마지막에 반드시 실행된다.
     try {
         // await 은 서버 응답이 올 때까지 기다린다.
         // 3부의 fetch().then().then() 사슬이 두 줄이 되었다.
-        //const students = await fetchStudents();
-        const students = await fetchStuAll();
+        const students = await fetchStudents();
         renderStudentTable(students);
     } catch (error) {
         console.error("Error:", error);
         showError(error.message);
+        renderTableError();
     } finally {
         // 여기에 두면 성공 경로와 실패 경로에 두 번 적지 않아도 된다.
-        loadingMessage.style.display = "none";
+        setLoading(false);
     }
 }
 
-async function createStudent(studentData) {
-    try {
-        await apiCreateStudent(studentData);
+/* 버튼마다 이벤트를 걸지 않는 이유는, 표를 다시 그릴 때마다
+   버튼이 새로 만들어져 매번 다시 걸어야 하기 때문이다.
+   사라지지 않는 부모인 tbody 에 한 번만 걸어 두면
+   나중에 생기는 행의 버튼도 그대로 동작한다(이벤트 위임). */
+studentTableBody.addEventListener("click", async (event) => {
+    // tbody 안에서 일어난 클릭이 전부 여기로 들어온다.
+    // 이름 칸을 눌렀는지 버튼을 눌렀는지 먼저 가려내야 한다.
+    //
+    //   event.target  이벤트를 건 tbody 가 아니라 실제로 눌린 가장 안쪽 요소
+    //   closest(...)  자기 자신부터 부모 쪽으로 올라가며 조건에 맞는 첫 요소를 찾는다
+    //                 끝까지 없으면 null 을 돌려준다
+    //<button type="button" class="edit-btn" data-action="edit" data-id="1">수정</button>
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;             // 버튼이 아닌 곳을 눌렀다
  
-        showSuccess("학생이 성공적으로 등록되었습니다.");
-        studentForm.reset();
-        loadStudents();
+    // data-action="edit" 은 button.dataset.action 으로 읽는다.
+    const { action, id } = button.dataset;
+ 
+    // dataset 값은 언제나 문자열이다. data-id="3" 이면 "3" 이 온다.
+    // 그래서 Number() 로 숫자로 바꿔서 넘긴다.
+    if (action === "edit") {
+        await startEdit(Number(id));
+    } else if (action === "delete") {
+        await removeStudent(Number(id));
+    }
+});
+
+// 수정할 학생 정보를 불러와 폼에 채우고 수정 모드로 바꾼다.
+async function startEdit(studentId) {
+    clearMessages();
+ 
+    try {
+        const student = await fetchStudent(studentId);
+ 
+        fillForm(student);
+        editingStudentId = studentId;   // 이제 제출하면 등록이 아니라 수정이 된다
+        setEditMode(true);
+        scrollToForm();
     } catch (error) {
         console.error("Error:", error);
         showError(error.message);
     }
 }
-
-// 학생 수정 처리
-async function updateStudent(studentId, studentData) {
-    try {
-        await apiUpdateStudent(studentId, studentData);
  
-        resetForm();   // clearMessages() 가 들어 있으므로 메시지보다 먼저
-        showSuccess("학생 정보가 성공적으로 수정되었습니다.");
-        loadStudents();
-    } catch (error) {
-        console.error("Error:", error);
-        showError(error.message);
-    }
-}
- 
-// 학생 삭제 — confirm 은 화면 처리이므로 그대로 남는다
-async function deleteStudent(studentId) {
+// 확인을 받은 뒤 학생을 삭제한다.
+async function removeStudent(studentId) {
     if (!confirm("정말로 이 학생을 삭제하시겠습니까?")) {
         return;
     }
  
     try {
-        await apiDeleteStudent(studentId);
- 
+        await deleteStudent(studentId);
         showSuccess("학생이 성공적으로 삭제되었습니다.");
-        loadStudents();
-    } catch (error) {
-        console.error("Error:", error);
-        showError(error.message);
-    }
-}
  
-// 수정 전 데이터 로드 — 폼 채우기는 실습 4-9 에서 fillForm 으로 옮긴다
-async function editStudent(studentId) {
-    try {
-        const student = await apiFetchStudent(studentId);
- 
-        studentForm.name.value = student.name;
-        studentForm.studentNumber.value = student.studentNumber;
- 
-        if (student.detail) {
-            studentForm.address.value = student.detail.address;
-            studentForm.phoneNumber.value = student.detail.phoneNumber;
-            studentForm.email.value = student.detail.email || "";
-            studentForm.dateOfBirth.value = student.detail.dateOfBirth || "";
+        // 수정 중이던 학생을 삭제했다면 폼도 등록 모드로 되돌린다.
+        // 이걸 빠뜨리면 없는 학생을 수정하려다 404 가 난다.
+        if (editingStudentId === studentId) {
+            editingStudentId = null;
+            resetForm();
         }
  
-        editingStudentId = studentId;
-        submitButton.textContent = "학생 수정";
-        studentForm.scrollIntoView({ behavior: "smooth" });
+        await loadStudents();
     } catch (error) {
         console.error("Error:", error);
         showError(error.message);
@@ -185,30 +167,5 @@ async function editStudent(studentId) {
 }
 
 
-function renderStudentTable(students) {
-    studentTableBody.innerHTML = "";
-
-    students.forEach((student) => {
-        const row = document.createElement("tr");
-
-        //${student.detail ? student.detail.email || "-" : "-"}
-        row.innerHTML = `
-                    <td>${student.name}</td>
-                    <td>${student.studentNumber}</td>
-                    <td>${student.detail?.address ?? "-"}</td>
-                    <td>${student.detail?.phoneNumber ?? "-"}</td>
-                    <td>${student.detail?.email ?? "-"}</td>
-                    <td>${student.detail?.dateOfBirth ?? "-"}</td>
-                    <td>
-                        <button class="edit-btn" onclick="editStudent(${student.id})">수정</button>
-                        <button class="delete-btn" onclick="deleteStudent(${student.id})">삭제</button>
-                    </td>
-                `;
-
-        studentTableBody.appendChild(row);
-    });
-}
-
-
-window.editStudent = editStudent;
-window.deleteStudent = deleteStudent;
+// Student load 함수 호출
+loadStudents();
