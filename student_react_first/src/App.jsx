@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fetchStudents, createStudent, updateStudent, deleteStudent, fetchStudent } from './api/studentApi';
 import StudentTable from './components/StudentTable';
-import StudentForm from './components/StudentForm';
+//import StudentForm from './components/StudentForm';
+import StudentForm from './components/StudentFormField';
 import { EMPTY_FORM, toFormValues, toRequest } from './lib/studentData';
 import { validateStudent } from './lib/validation';
 import { APP_MODE } from "./config.js";
@@ -36,7 +37,8 @@ function App() {
   }
 
 
-  async function loadStudents() {
+  //async function loadStudents() {
+  const loadStudents = useCallback(async () => {
     setLoading(true);
     setListError(null);
 
@@ -55,13 +57,13 @@ function App() {
       // 성공하든 실패하든 로딩 표시는 반드시 끈다.
       setLoading(false);
     }
-  }
+  },[]);
 
   useEffect(() => {
     // 아래 주석은 ESLint 에게 "이 경고는 알고 있다"고 알려 주는 줄이다.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 처음 한 번 목록을 불러오는 것은 의도된 동작입니다
     loadStudents();
-  }, []);
+  }, [loadStudents]);
 
   /* -----------------------------------------------------
        성공 메시지는 3초 뒤에 저절로 사라진다
@@ -86,8 +88,15 @@ function App() {
     return () => clearTimeout(timer);
   }, [message]);
 
+  //function resetForm() {
+  const resetForm = useCallback(() => {  
+    setForm(EMPTY_FORM);
+    setEditingId(null);
 
-  async function handleEdit(studentId) {
+  },[])//resetForm
+
+  //async function handleEdit(studentId) {
+  const handleEdit = useCallback(async (studentId) => {  
     setMessage(null);            // 앞선 메시지를 지운다
 
     try {
@@ -107,9 +116,10 @@ function App() {
       console.error("Error:", error);
       setMessage({ text: error.message, type: "error" });
     }
-  }//handleEdit
+  },[]);//handleEdit
 
-  async function handleDelete(studentId) {
+  //async function handleDelete(studentId) {
+  const handleDelete = useCallback(async (studentId) => {  
     if (!confirm("정말로 이 학생을 삭제하시겠습니까?")) {
       return;
     }
@@ -128,7 +138,7 @@ function App() {
       console.error("Error:", error);
       setMessage({ text: error.message, type: "error" });
     }
-  }//handleDelete
+  }, [editingId, resetForm, loadStudents]);//handleDelete
 
   function handleChange(event) {
     // 어느 칸이 바뀌었는지, 값은 무엇인지 꺼낸다.
@@ -181,17 +191,7 @@ function App() {
       console.error("Error:", error);
       setMessage({ text: error.message, type: "error" });   // 서버가 보낸 실제 메시지
     }
-
-
   }//handleSubmit
-
-  // 실습 5-9 에서 속을 채운다.
-  function resetForm() {
-    setForm(EMPTY_FORM);
-    setEditingId(null);
-
-  }//resetForm
-
 
 
   return (
